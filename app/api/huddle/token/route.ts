@@ -28,26 +28,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'roomId is required' }, { status: 400 })
   }
 
-  const accessToken = new AccessToken({
-    apiKey: process.env.HUDDLE01_API_KEY!,
-    roomId: roomId,
-    role: Role.HOST,
-    permissions: {
-      admin: true,
-      canConsume: true,
-      canProduce: true,
-      canProduceSources: {
-        cam: true,
-        mic: true,
-        screen: true
-      },
-      canRecvData: true,
-      canSendData: true,
-      canUpdateMetadata: true
-    }
-  } as AccessTokenParams)
+  try {
+    const accessToken = new AccessToken({
+      apiKey: process.env.HUDDLE01_API_KEY!,
+      roomId: roomId,
+      role: Role.HOST,
+      permissions: {
+        admin: true,
+        canConsume: true,
+        canProduce: true,
+        canProduceSources: {
+          cam: true,
+          mic: true,
+          screen: true
+        },
+        canRecvData: true,
+        canSendData: true,
+        canUpdateMetadata: true
+      }
+    } as AccessTokenParams)
 
-  const token = await accessToken.toJwt()
-
-  return NextResponse.json({ token })
+    const token = await accessToken.toJwt()
+    return NextResponse.json({ token })
+  } catch (error) {
+    console.error('Token generation error:', error)
+    return NextResponse.json({ error: 'Failed to generate token' }, { status: 500 })
+  }
 } 

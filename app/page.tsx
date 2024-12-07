@@ -45,7 +45,7 @@ const ROOM_LAYOUTS: Room[] = [
     width: 700,
     height: 500,
     type: 'event',
-    theme: { color: '#FF4081' }
+    theme: { color: 'rgba(255, 64, 129, 0.25)' }
   } as EventRoom,
   {
     id: 'workshop-1',
@@ -55,7 +55,7 @@ const ROOM_LAYOUTS: Room[] = [
     width: 400,
     height: 300,
     type: 'workshop',
-    theme: { color: '#4CAF50' }
+    theme: { color: 'rgba(76, 175, 80, 0.25)' }
   } as WorkshopRoom,
   {
     id: 'workshop-2',
@@ -65,7 +65,7 @@ const ROOM_LAYOUTS: Room[] = [
     width: 400,
     height: 300,
     type: 'workshop',
-    theme: { color: '#9C27B0' }
+    theme: { color: 'rgba(156, 39, 176, 0.25)' }
   } as WorkshopRoom,
   {
     id: 'networking-north',
@@ -75,7 +75,7 @@ const ROOM_LAYOUTS: Room[] = [
     width: 500,
     height: 250,
     type: 'social',
-    theme: { color: '#2196F3' }
+    theme: { color: 'rgba(33, 150, 243, 0.25)' }
   } as SocialRoom,
   {
     id: 'networking-south',
@@ -85,7 +85,7 @@ const ROOM_LAYOUTS: Room[] = [
     width: 500,
     height: 250,
     type: 'social',
-    theme: { color: '#2196F3' }
+    theme: { color: 'rgba(33, 150, 243, 0.25)' }
   } as SocialRoom,
   ...Array.from({ length: 12 }, (_, i) => ({
     id: `sponsor-${i + 1}`,
@@ -96,7 +96,7 @@ const ROOM_LAYOUTS: Room[] = [
     height: 160,
     type: 'sponsor' as const,
     theme: {
-      color: `hsla(${i * 30}, 70%, 60%, 0.85)`
+      color: `hsla(${i * 30}, 70%, 60%, 0.25)`
     }
   } as SponsorRoom))
 ]
@@ -148,15 +148,19 @@ export default function Home() {
   const [users, setUsers] = useState<{ [peerId: string]: { x: number; y: number; color: string } }>({});
 
   const { sendData } = useDataMessage({
-    onMessage: (payload, from) => {
-      const data = JSON.parse(payload);
-      if (data.type === 'positionUpdate') {
-        setUsers((prev) => ({
-          ...prev,
-          [from]: { x: data.x, y: data.y, color: data.color },
-        }));
+    onMessage: useCallback((payload: string, from: string) => {
+      try {
+        const data = JSON.parse(payload);
+        if (data.type === 'positionUpdate') {
+          setUsers((prev) => ({
+            ...prev,
+            [from]: { x: data.x, y: data.y, color: data.color },
+          }));
+        }
+      } catch (error) {
+        console.error('Failed to parse data message:', error);
       }
-    },
+    }, [])
   });
 
   // Fetch token for the main environment room
@@ -282,40 +286,51 @@ export default function Home() {
   const drawMinimap = useCallback((ctx: CanvasRenderingContext2D, viewport: Viewport, playerAvatar: Avatar) => {
     const minimapWidth = 180
     const minimapHeight = (WORLD_HEIGHT / WORLD_WIDTH) * minimapWidth
+    const padding = 10
     
-    ctx.clearRect(0, 0, minimapWidth + 20, minimapHeight + 10)
+    // Draw minimap background
+    ctx.fillStyle = 'rgba(26, 26, 46, 0.9)'
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.2)'
+    ctx.shadowBlur = 10
+    ctx.beginPath()
+    ctx.roundRect(padding, padding, minimapWidth, minimapHeight, 8)
+    ctx.fill()
     
     const scale = minimapWidth / WORLD_WIDTH
     
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-    ctx.fillRect(10, 5, minimapWidth, minimapHeight)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
-    ctx.strokeRect(10, 5, minimapWidth, minimapHeight)
-    
+    // Draw rooms in minimap
     ROOM_LAYOUTS.forEach((room) => {
-      ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
-      ctx.fillRect(
-        10 + room.x * scale,
-        5 + room.y * scale,
+      ctx.fillStyle = room.theme?.color || 'rgba(255, 255, 255, 0.2)'
+      ctx.beginPath()
+      ctx.roundRect(
+        padding + room.x * scale,
+        padding + room.y * scale,
         room.width * scale,
-        room.height * scale
+        room.height * scale,
+        2
       )
+      ctx.fill()
     })
     
+    // Draw viewport area
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.lineWidth = 1
     ctx.strokeRect(
-      10 + viewport.x * scale,
-      5 + viewport.y * scale,
+      padding + viewport.x * scale,
+      padding + viewport.y * scale,
       viewport.width * scale,
       viewport.height * scale
     )
     
-    ctx.fillStyle = '#FF4444'
+    // Draw player position
+    ctx.shadowColor = playerAvatar.color
+    ctx.shadowBlur = 5
+    ctx.fillStyle = playerAvatar.color
     ctx.beginPath()
     ctx.arc(
-      10 + playerAvatar.x * scale,
-      5 + playerAvatar.y * scale,
-      4,
+      padding + playerAvatar.x * scale,
+      padding + playerAvatar.y * scale,
+      3,
       0,
       2 * Math.PI
     )
@@ -333,10 +348,19 @@ export default function Home() {
       ctx.save()
       ctx.translate(-viewport.x, -viewport.y)
 
+      // Draw gradient background
+      const gradient = ctx.createLinearGradient(viewport.x, viewport.y, viewport.x + canvasSize.width, viewport.y + canvasSize.height)
+      gradient.addColorStop(0, '#1a1a2e')
+      gradient.addColorStop(1, '#16213e')
+      ctx.fillStyle = gradient
+      ctx.fillRect(viewport.x, viewport.y, canvasSize.width, canvasSize.height)
+
+      // Draw grid with improved style
       const gridOffsetX = viewport.x % TILE_SIZE
       const gridOffsetY = viewport.y % TILE_SIZE
       
-      ctx.strokeStyle = 'rgba(200, 200, 200, 0.2)'
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
+      ctx.lineWidth = 1
       ctx.beginPath()
 
       for (let x = viewport.x - gridOffsetX; x <= viewport.x + canvasSize.width; x += TILE_SIZE) {
@@ -350,41 +374,58 @@ export default function Home() {
       }
       ctx.stroke()
 
+      // Draw rooms with glass morphism effect
       ROOM_LAYOUTS.forEach((room) => {
-        ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
-        ctx.fillRect(room.x, room.y, room.width, room.height)
-        
+        // Draw room background with blur effect simulation
+        ctx.fillStyle = room.theme?.color || 'rgba(255, 255, 255, 0.1)'
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.1)'
+        ctx.shadowBlur = 15
+        ctx.beginPath()
+        ctx.roundRect(room.x, room.y, room.width, room.height, 10)
+        ctx.fill()
+
+        // Draw room border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+        ctx.lineWidth = currentZone?.id === room.id ? 3 : 1
+        ctx.stroke()
+
+        // Draw room name with improved typography
+        ctx.shadowBlur = 0
         ctx.fillStyle = 'white'
-        ctx.font = '16px sans-serif'
+        ctx.font = 'bold 16px Inter, system-ui'
         ctx.textAlign = 'center'
         ctx.fillText(room.name, room.x + room.width/2, room.y + room.height/2)
         
-        if (currentZone && currentZone.id === room.id) {
-          ctx.strokeStyle = 'white'
-          ctx.lineWidth = 2
-          ctx.strokeRect(room.x, room.y, room.width, room.height)
-        }
+        // Draw room type label
+        ctx.font = '12px Inter, system-ui'
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
+        ctx.fillText(room.type.toUpperCase(), room.x + room.width/2, room.y + room.height/2 + 20)
       })
 
-      // Draw local player
+      // Draw player avatar with glow effect
+      ctx.shadowColor = playerAvatar.color
+      ctx.shadowBlur = 15
       ctx.fillStyle = playerAvatar.color
       ctx.beginPath()
       ctx.arc(playerAvatar.x, playerAvatar.y, AVATAR_SIZE/2, 0, Math.PI * 2)
       ctx.fill()
 
-      // Draw other users
+      // Draw other users with glow effect
       peerIds.forEach((pid) => {
-        const user = users[pid];
+        const user = users[pid]
         if (user) {
-          ctx.fillStyle = user.color;
-          ctx.beginPath();
-          ctx.arc(user.x, user.y, AVATAR_SIZE/2, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.shadowColor = user.color
+          ctx.shadowBlur = 15
+          ctx.fillStyle = user.color
+          ctx.beginPath()
+          ctx.arc(user.x, user.y, AVATAR_SIZE/2, 0, Math.PI * 2)
+          ctx.fill()
         }
-      });
+      })
 
       ctx.restore()
 
+      // Draw enhanced minimap
       drawMinimap(ctx, viewport, playerAvatar)
 
       animationFrameId.current = requestAnimationFrame(animate)
@@ -455,6 +496,13 @@ export default function Home() {
       console.error('Failed to handle video room:', error)
     }
   }, [currentZone, createVideoRoom, joinVideoRoom, leaveRoom, state])
+  useEffect(() => {
+    return () => {
+      if (state === 'connected') {
+        leaveRoom()
+      }
+    }
+  }, [leaveRoom, state])
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-white">
