@@ -157,14 +157,27 @@ export default function Home() {
   const [viewport, setViewport] = useState<Viewport>({ 
     x: 0, 
     y: 0, 
-    width: window.innerWidth, 
-    height: window.innerHeight 
+    width: 0, 
+    height: 0 
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const animationFrameId = useRef<number | null>(null)
   const keysPressed = useRef(new Set<string>())
   const [velocity, setVelocity] = useState<Velocity>({ x: 0, y: 0 })
+
+  // Add this useEffect near the top of other useEffects
+  useEffect(() => {
+    setViewport(prev => ({
+      ...prev,
+      width: window.innerWidth,
+      height: window.innerHeight
+    }))
+    setCanvasSize({
+      width: window.innerWidth,
+      height: window.innerHeight
+    })
+  }, [])
 
   // Movement handling
   const movePlayer = useCallback(() => {
