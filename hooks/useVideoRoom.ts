@@ -31,6 +31,8 @@ export function useVideoRoom() {
         throw new Error(tokenData.error || 'Failed to get access token')
       }
 
+      console.log("token", tokenData.token)
+
       setToken(tokenData.token)
 
       // Return room data

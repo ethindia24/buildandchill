@@ -7,6 +7,7 @@ import VideoRoom from "@/components/VideoRoom"
 import { motion, AnimatePresence } from "framer-motion"
 import { useVideoRoom } from "@/hooks/useVideoRoom"
 import { Room, EventRoom, SponsorRoom, WorkshopRoom, SocialRoom } from "@/types/shared"
+import { useRoom, usePeerIds, useDataMessage } from "@huddle01/react/hooks"
 
 interface Avatar {
   id: string
@@ -138,7 +139,52 @@ export default function Home() {
   const { token, isLoading, error, createVideoRoom, joinVideoRoom } = useVideoRoom()
   const [activeVideoRoom, setActiveVideoRoom] = useState<string | null>(null)
 
-  // Add this useEffect near the top of other useEffects
+  // Main environment room
+  const ROOM_ID = "rov-ksqz-okz"; // Replace this with a valid roomId
+  const [envToken, setEnvToken] = useState<string | null>(null);
+
+  const { joinRoom, state } = useRoom();
+  const { peerIds } = usePeerIds();
+  const [users, setUsers] = useState<{ [peerId: string]: { x: number; y: number; color: string } }>({});
+
+  const { sendData } = useDataMessage({
+    onMessage: (payload, from) => {
+      const data = JSON.parse(payload);
+      if (data.type === 'positionUpdate') {
+        setUsers((prev) => ({
+          ...prev,
+          [from]: { x: data.x, y: data.y, color: data.color },
+        }));
+      }
+    },
+  });
+
+  // Fetch token for the main environment room
+  useEffect(() => {
+    async function fetchToken() {
+      if (!ROOM_ID) return;
+      try {
+        const res = await fetch(`/api/huddle/token?roomId=${ROOM_ID}`);
+        const data = await res.json();
+        if (data.token) {
+          setEnvToken(data.token);
+        } else {
+          console.error('No token returned for environment room');
+        }
+      } catch (err) {
+        console.error('Failed to fetch env room token:', err);
+      }
+    }
+    fetchToken();
+  }, [ROOM_ID]);
+
+  // Join the main environment room once token is available
+  useEffect(() => {
+    if (ROOM_ID && envToken) {
+      joinRoom({ roomId: ROOM_ID, token: envToken });
+    }
+  }, [ROOM_ID, envToken, joinRoom]);
+
   useEffect(() => {
     setViewport(prev => ({
       ...prev,
@@ -151,12 +197,10 @@ export default function Home() {
     })
   }, [])
 
-  // Movement handling
   const movePlayer = useCallback(() => {
     const newVelocity = { x: 0, y: 0 }
     let moved = false
 
-    // Combine velocities for diagonal movement
     if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('w')) {
       newVelocity.y -= MOVE_SPEED
       moved = true
@@ -174,7 +218,6 @@ export default function Home() {
       moved = true
     }
 
-    // Normalize diagonal movement
     if (newVelocity.x !== 0 && newVelocity.y !== 0) {
       const length = Math.sqrt(newVelocity.x * newVelocity.x + newVelocity.y * newVelocity.y)
       newVelocity.x = (newVelocity.x / length) * MOVE_SPEED
@@ -194,13 +237,25 @@ export default function Home() {
       y: playerAvatar.y + newVelocity.y
     }
 
-    // Keep player within world bounds
     newPosition.x = Math.max(AVATAR_SIZE, Math.min(newPosition.x, WORLD_WIDTH - AVATAR_SIZE))
     newPosition.y = Math.max(AVATAR_SIZE, Math.min(newPosition.y, WORLD_HEIGHT - AVATAR_SIZE))
     
     setPlayerAvatar(newPosition)
-    
-    // Update viewport to follow player smoothly
+
+    // Broadcast position to other peers
+    if (state === 'connected') {
+      sendData({
+        to: '*',
+        payload: JSON.stringify({
+          type: 'positionUpdate',
+          x: newPosition.x,
+          y: newPosition.y,
+          color: newPosition.color,
+        }),
+        label: 'pos',
+      });
+    }
+
     const targetX = newPosition.x - canvasSize.width / 2
     const targetY = newPosition.y - canvasSize.height / 2
     
@@ -209,9 +264,8 @@ export default function Home() {
       x: Math.max(0, Math.min(targetX, WORLD_WIDTH - canvasSize.width)),
       y: Math.max(0, Math.min(targetY, WORLD_HEIGHT - canvasSize.height))
     }))
-  }, [playerAvatar, velocity, canvasSize.width, canvasSize.height])
+  }, [playerAvatar, velocity, canvasSize.width, canvasSize.height, sendData, state])
 
-  // Handle keyboard input
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.key)
     const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key)
@@ -225,7 +279,6 @@ export default function Home() {
     }
   }, [])
 
-  // Move drawMinimap before animation loop
   const drawMinimap = useCallback((ctx: CanvasRenderingContext2D, viewport: Viewport, playerAvatar: Avatar) => {
     const minimapWidth = 180
     const minimapHeight = (WORLD_HEIGHT / WORLD_WIDTH) * minimapWidth
@@ -269,7 +322,6 @@ export default function Home() {
     ctx.fill()
   }, [])
 
-  // Animation loop with combined movement and rendering
   useEffect(() => {
     const animate = () => {
       movePlayer()
@@ -281,7 +333,6 @@ export default function Home() {
       ctx.save()
       ctx.translate(-viewport.x, -viewport.y)
 
-      // Draw grid
       const gridOffsetX = viewport.x % TILE_SIZE
       const gridOffsetY = viewport.y % TILE_SIZE
       
@@ -299,18 +350,15 @@ export default function Home() {
       }
       ctx.stroke()
 
-      // Draw rooms
       ROOM_LAYOUTS.forEach((room) => {
         ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
         ctx.fillRect(room.x, room.y, room.width, room.height)
         
-        // Always show room names
         ctx.fillStyle = 'white'
         ctx.font = '16px sans-serif'
         ctx.textAlign = 'center'
         ctx.fillText(room.name, room.x + room.width/2, room.y + room.height/2)
         
-        // Highlight current room
         if (currentZone && currentZone.id === room.id) {
           ctx.strokeStyle = 'white'
           ctx.lineWidth = 2
@@ -318,11 +366,22 @@ export default function Home() {
         }
       })
 
-      // Draw player
+      // Draw local player
       ctx.fillStyle = playerAvatar.color
       ctx.beginPath()
       ctx.arc(playerAvatar.x, playerAvatar.y, AVATAR_SIZE/2, 0, Math.PI * 2)
       ctx.fill()
+
+      // Draw other users
+      peerIds.forEach((pid) => {
+        const user = users[pid];
+        if (user) {
+          ctx.fillStyle = user.color;
+          ctx.beginPath();
+          ctx.arc(user.x, user.y, AVATAR_SIZE/2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
 
       ctx.restore()
 
@@ -338,26 +397,23 @@ export default function Home() {
         cancelAnimationFrame(animationFrameId.current)
       }
     }
-  }, [movePlayer, viewport, playerAvatar, currentZone, canvasSize, drawMinimap])
+  }, [movePlayer, viewport, playerAvatar, currentZone, canvasSize, drawMinimap, peerIds, users])
 
-  // Handle canvas resize
   useEffect(() => {
     const handleResize = () => {
       if (canvasRef.current) {
         const width = window.innerWidth
         const height = window.innerHeight
         
-        // Update canvas size
         canvasRef.current.width = width
         canvasRef.current.height = height
         
-        // Update state
         setCanvasSize({ width, height })
         setViewport(prev => ({ ...prev, width, height }))
       }
     }
     
-    handleResize() // Initial size
+    handleResize()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
@@ -375,21 +431,17 @@ export default function Home() {
     }
   }, [viewport, currentZone])
 
-  // Add click handler for rooms
   const handleCanvasClick = useCallback(async () => {
     if (!currentZone || currentZone.type !== 'event') return
 
     try {
       if (currentZone.huddleRoomId) {
-        // Join existing video room
         await joinVideoRoom(currentZone.huddleRoomId)
         setActiveVideoRoom(currentZone.huddleRoomId)
       } else {
-        // Create new video room
         const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
         setActiveVideoRoom(videoRoom.huddleRoomId)
         
-        // Update the current zone with the new huddleRoomId
         setCurrentZone(prev => prev ? {
           ...prev,
           huddleRoomId: videoRoom.huddleRoomId
