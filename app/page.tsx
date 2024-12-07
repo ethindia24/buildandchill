@@ -3,14 +3,10 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import ActionToolbar from "@/components/ActionToolbar"
 import SpaceBuilder from "@/components/SpaceBuilder"
+import VideoRoom from "@/components/VideoRoom"
 import { motion, AnimatePresence } from "framer-motion"
-
-const AVATAR_SIZE = 24
-const MOVE_SPEED = 5
-const VELOCITY_DECAY = 0.8
-const WORLD_WIDTH = 3200
-const WORLD_HEIGHT = 2000
-const TILE_SIZE = 100
+import { useVideoRoom } from "@/hooks/useVideoRoom"
+import { Room, EventRoom, SponsorRoom, WorkshopRoom, SocialRoom } from "@/types/shared"
 
 interface Avatar {
   id: string
@@ -27,102 +23,81 @@ interface Viewport {
   height: number
 }
 
-interface Room {
-  id: string
-  name: string
+interface Velocity {
   x: number
   y: number
-  width: number
-  height: number
-  type: 'event' | 'social' | 'sponsor' | 'workshop'
-  theme?: {
-    color: string
-  }
 }
 
-// This will eventually come from our smart contract
+const AVATAR_SIZE = 24
+const MOVE_SPEED = 5
+const VELOCITY_DECAY = 0.8
+const WORLD_WIDTH = 3200
+const WORLD_HEIGHT = 2000
+const TILE_SIZE = 100
+
 const ROOM_LAYOUTS: Room[] = [
-  // Main Stage - Heart of the space
-  { 
-    id: 'main-stage', 
-    name: 'Main Stage', 
-    x: WORLD_WIDTH/2 - 350, 
-    y: WORLD_HEIGHT/2 - 250, 
-    width: 700,  // Prominent but not overwhelming
-    height: 500, 
-    type: 'event', 
-    theme: { color: '#FF4081' } 
-  },
-
-  // Workshops form a balanced pair on the left
-  { 
-    id: 'workshop-1', 
-    name: 'Workshop A', 
-    x: 250, 
-    y: WORLD_HEIGHT/2 - 450, 
-    width: 400, 
-    height: 300, 
-    type: 'workshop', 
-    theme: { color: '#4CAF50' } 
-  },
-  { 
-    id: 'workshop-2', 
-    name: 'Workshop B', 
-    x: 250, 
-    y: WORLD_HEIGHT/2 + 150, 
-    width: 400, 
-    height: 300, 
-    type: 'workshop', 
-    theme: { color: '#9C27B0' } 
-  },
-
-  // Networking spaces in harmony with main stage
-  { 
-    id: 'networking-north', 
-    name: 'Networking North', 
-    x: WORLD_WIDTH/2 - 250, 
-    y: 250, 
-    width: 500, 
-    height: 250, 
-    type: 'social', 
-    theme: { color: '#2196F3' } 
-  },
-  { 
-    id: 'networking-south', 
-    name: 'Networking South', 
-    x: WORLD_WIDTH/2 - 250, 
-    y: WORLD_HEIGHT - 500, 
-    width: 500, 
-    height: 250, 
-    type: 'social', 
-    theme: { color: '#2196F3' } 
-  },
-
-  // Sponsor booths in a gentle curve on the right
-  ...Array.from({ length: 12 }, (_, i) => {
-    // Create 4 rows of 3 booths each, with a slight curve
-    const row = Math.floor(i / 3)
-    const col = i % 3
-    const curve = Math.sin(row * Math.PI / 3) * 100  // Gentle curve
-    
-    const boothWidth = 250
-    const boothHeight = 160
-    const horizontalSpacing = 300
-    const verticalSpacing = 250
-    
-    return {
-      id: `sponsor-${i + 1}`,
-      name: `Sponsor ${i + 1}`,
-      x: WORLD_WIDTH - 900 + col * horizontalSpacing + curve,
-      y: 400 + row * verticalSpacing,
-      width: boothWidth,
-      height: boothHeight,
-      type: 'sponsor' as const,
-      theme: { 
-        color: `hsla(${i * 30}, 70%, 60%, 0.85)`
-      }
+  {
+    id: 'main-stage',
+    name: 'Main Stage',
+    x: WORLD_WIDTH/2 - 350,
+    y: WORLD_HEIGHT/2 - 250,
+    width: 700,
+    height: 500,
+    type: 'event',
+    theme: { color: '#FF4081' }
+  } as EventRoom,
+  {
+    id: 'workshop-1',
+    name: 'Workshop A',
+    x: 250,
+    y: WORLD_HEIGHT/2 - 450,
+    width: 400,
+    height: 300,
+    type: 'workshop',
+    theme: { color: '#4CAF50' }
+  } as WorkshopRoom,
+  {
+    id: 'workshop-2',
+    name: 'Workshop B',
+    x: 250,
+    y: WORLD_HEIGHT/2 + 150,
+    width: 400,
+    height: 300,
+    type: 'workshop',
+    theme: { color: '#9C27B0' }
+  } as WorkshopRoom,
+  {
+    id: 'networking-north',
+    name: 'Networking North',
+    x: WORLD_WIDTH/2 - 250,
+    y: 250,
+    width: 500,
+    height: 250,
+    type: 'social',
+    theme: { color: '#2196F3' }
+  } as SocialRoom,
+  {
+    id: 'networking-south',
+    name: 'Networking South',
+    x: WORLD_WIDTH/2 - 250,
+    y: WORLD_HEIGHT - 500,
+    width: 500,
+    height: 250,
+    type: 'social',
+    theme: { color: '#2196F3' }
+  } as SocialRoom,
+  ...Array.from({ length: 12 }, (_, i) => ({
+    id: `sponsor-${i + 1}`,
+    name: `Sponsor ${i + 1}`,
+    x: WORLD_WIDTH - 900 + (i % 3) * 300 + Math.sin(Math.floor(i / 3) * Math.PI / 3) * 100,
+    y: 400 + Math.floor(i / 3) * 250,
+    width: 250,
+    height: 160,
+    type: 'sponsor' as const,
+    theme: {
+      color: `hsla(${i * 30}, 70%, 60%, 0.85)`
     }
-  })
+  } as SponsorRoom))
 ]
 
 const checkZone = (position: { x: number; y: number }): Room | null => {
@@ -139,11 +114,6 @@ const checkZone = (position: { x: number; y: number }): Room | null => {
   return null
 }
 
-interface Velocity {
-  x: number
-  y: number
-}
-
 export default function Home() {
   const [showSpaceBuilder, setShowSpaceBuilder] = useState(false)
   const [currentZone, setCurrentZone] = useState<Room | null>(null)
@@ -158,13 +128,15 @@ export default function Home() {
     x: 0, 
     y: 0, 
     width: 0, 
-    height: 0 
+    height: 0
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const animationFrameId = useRef<number | null>(null)
   const keysPressed = useRef(new Set<string>())
   const [velocity, setVelocity] = useState<Velocity>({ x: 0, y: 0 })
+  const { token, isLoading, error, createVideoRoom, joinVideoRoom } = useVideoRoom()
+  const [activeVideoRoom, setActiveVideoRoom] = useState<string | null>(null)
 
   // Add this useEffect near the top of other useEffects
   useEffect(() => {
@@ -403,6 +375,31 @@ export default function Home() {
     }
   }, [viewport, currentZone])
 
+  // Add click handler for rooms
+  const handleCanvasClick = useCallback(async () => {
+    if (!currentZone || currentZone.type !== 'event') return
+
+    try {
+      if (currentZone.huddleRoomId) {
+        // Join existing video room
+        await joinVideoRoom(currentZone.huddleRoomId)
+        setActiveVideoRoom(currentZone.huddleRoomId)
+      } else {
+        // Create new video room
+        const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
+        setActiveVideoRoom(videoRoom.huddleRoomId)
+        
+        // Update the current zone with the new huddleRoomId
+        setCurrentZone(prev => prev ? {
+          ...prev,
+          huddleRoomId: videoRoom.huddleRoomId
+        } as EventRoom : null)
+      }
+    } catch (error) {
+      console.error('Failed to handle video room:', error)
+    }
+  }, [currentZone, createVideoRoom, joinVideoRoom])
+
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-white">
       <canvas
@@ -412,6 +409,7 @@ export default function Home() {
         className="absolute inset-0"
         style={{ touchAction: 'none' }}
         onMouseMove={handleMouseMove}
+        onClick={handleCanvasClick}
       />
       <AnimatePresence>
         {showSpaceBuilder && (
@@ -425,9 +423,36 @@ export default function Home() {
             </motion.div>
           </div>
         )}
+        {activeVideoRoom && token && (
+          <div className="absolute inset-0 z-50">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              style={{ width: '100%', height: '100%' }}
+            >
+              <VideoRoom 
+                roomId={activeVideoRoom} 
+                token={token} 
+                onClose={() => setActiveVideoRoom(null)}
+              />
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
       <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
+      {error && (
+        <div className="absolute top-4 right-4 bg-red-500 text-white px-4 py-2 rounded shadow-lg">
+          {error}
+        </div>
+      )}
+      {isLoading && (
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+          <div className="bg-white p-4 rounded-lg shadow-lg">
+            Loading video room...
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-
