@@ -1,18 +1,16 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
-import { MessageCircle } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from "react"
-import AIChat from "@/components/AIChat"
 import ActionToolbar from "@/components/ActionToolbar"
 import SpaceBuilder from "@/components/SpaceBuilder"
 import { motion, AnimatePresence } from "framer-motion"
 
-const TILE_SIZE = 32
 const AVATAR_SIZE = 24
 const MOVE_SPEED = 5
+const VELOCITY_DECAY = 0.8
 const WORLD_WIDTH = 3200
 const WORLD_HEIGHT = 2000
+const TILE_SIZE = 100
 
 interface Avatar {
   id: string
@@ -127,33 +125,6 @@ const ROOM_LAYOUTS: Room[] = [
   })
 ]
 
-// Update boundary checking to use rooms
-const checkCollision = (
-  position: { x: number; y: number },
-  avatars: Avatar[]
-) => {
-  // Check world boundaries
-  if (
-    position.x < AVATAR_SIZE / 2 ||
-    position.x > WORLD_WIDTH - AVATAR_SIZE / 2 ||
-    position.y < AVATAR_SIZE / 2 ||
-    position.y > WORLD_HEIGHT - AVATAR_SIZE / 2
-  ) {
-    return true
-  }
-
-  // Check other avatars
-  for (const avatar of avatars) {
-    const dx = position.x - avatar.x
-    const dy = position.y - avatar.y
-    if (Math.sqrt(dx * dx + dy * dy) < AVATAR_SIZE) {
-      return true
-    }
-  }
-
-  return false
-}
-
 const checkZone = (position: { x: number; y: number }): Room | null => {
   for (const room of ROOM_LAYOUTS) {
     if (
@@ -168,21 +139,12 @@ const checkZone = (position: { x: number; y: number }): Room | null => {
   return null
 }
 
-interface ZoneOverlayProps {
-  zone: Room | null
-}
-
-const ZoneOverlay: React.FC<ZoneOverlayProps> = ({ zone }) => {
-  if (!zone) return null
-  return (
-    <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/50 text-white px-4 py-2 rounded-full">
-      {zone.name}
-    </div>
-  )
+interface Velocity {
+  x: number
+  y: number
 }
 
 export default function Home() {
-  const [showChat, setShowChat] = useState(false)
   const [showSpaceBuilder, setShowSpaceBuilder] = useState(false)
   const [avatars, setAvatars] = useState<Avatar[]>([])
   const [currentZone, setCurrentZone] = useState<Room | null>(null)
@@ -200,114 +162,141 @@ export default function Home() {
     height: window.innerHeight 
   })
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  const keysPressed = useRef<Set<string>>(new Set())
-  const lastRender = useRef<number>(0)
+  const [canvasSize, setCanvasSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const animationFrameId = useRef<number | null>(null)
+  const keysPressed = useRef(new Set<string>())
+  const [velocity, setVelocity] = useState<Velocity>({ x: 0, y: 0 })
 
-  // Optimize movement with delta time
-  const movePlayer = useCallback((timestamp: number) => {
-    const delta = (timestamp - lastRender.current) / 16.67 // normalize to 60fps
-    lastRender.current = timestamp
-    
-    const newPosition = { ...playerAvatar }
+  // Movement handling
+  const movePlayer = useCallback(() => {
+    const newVelocity = { x: 0, y: 0 }
     let moved = false
 
-    const moveAmount = MOVE_SPEED * delta
-
-    if (keysPressed.current.has('ArrowUp')) {
-      newPosition.y -= moveAmount
+    // Combine velocities for diagonal movement
+    if (keysPressed.current.has('ArrowUp') || keysPressed.current.has('w')) {
+      newVelocity.y -= MOVE_SPEED
       moved = true
     }
-    if (keysPressed.current.has('ArrowDown')) {
-      newPosition.y += moveAmount
+    if (keysPressed.current.has('ArrowDown') || keysPressed.current.has('s')) {
+      newVelocity.y += MOVE_SPEED
       moved = true
     }
-    if (keysPressed.current.has('ArrowLeft')) {
-      newPosition.x -= moveAmount
+    if (keysPressed.current.has('ArrowLeft') || keysPressed.current.has('a')) {
+      newVelocity.x -= MOVE_SPEED
       moved = true
     }
-    if (keysPressed.current.has('ArrowRight')) {
-      newPosition.x += moveAmount
+    if (keysPressed.current.has('ArrowRight') || keysPressed.current.has('d')) {
+      newVelocity.x += MOVE_SPEED
       moved = true
     }
 
-    if (moved && !checkCollision(newPosition, avatars)) {
-      setPlayerAvatar(newPosition)
-      
-      // Update viewport directly here instead of in a separate effect
-      const targetX = newPosition.x - canvasSize.width / 2
-      const targetY = newPosition.y - canvasSize.height / 2
-      const clampedX = Math.max(0, Math.min(targetX, WORLD_WIDTH - canvasSize.width))
-      const clampedY = Math.max(0, Math.min(targetY, WORLD_HEIGHT - canvasSize.height))
-      setViewport(prev => ({ 
-        x: clampedX, 
-        y: clampedY,
-        width: prev.width,
-        height: prev.height
-      }))
-
-      const newZone = checkZone(newPosition)
-      if (newZone !== currentZone) {
-        setCurrentZone(newZone)
-      }
+    // Normalize diagonal movement
+    if (newVelocity.x !== 0 && newVelocity.y !== 0) {
+      const length = Math.sqrt(newVelocity.x * newVelocity.x + newVelocity.y * newVelocity.y)
+      newVelocity.x = (newVelocity.x / length) * MOVE_SPEED
+      newVelocity.y = (newVelocity.y / length) * MOVE_SPEED
     }
-  }, [playerAvatar, avatars, currentZone, canvasSize.width, canvasSize.height])
 
-  // Handle movement animation
+    if (!moved) {
+      newVelocity.x = velocity.x * VELOCITY_DECAY
+      newVelocity.y = velocity.y * VELOCITY_DECAY
+    }
+
+    setVelocity(newVelocity)
+
+    const newPosition: Avatar = {
+      ...playerAvatar,
+      x: playerAvatar.x + newVelocity.x,
+      y: playerAvatar.y + newVelocity.y
+    }
+
+    // Keep player within world bounds
+    newPosition.x = Math.max(AVATAR_SIZE, Math.min(newPosition.x, WORLD_WIDTH - AVATAR_SIZE))
+    newPosition.y = Math.max(AVATAR_SIZE, Math.min(newPosition.y, WORLD_HEIGHT - AVATAR_SIZE))
+    
+    setPlayerAvatar(newPosition)
+    
+    // Update viewport to follow player smoothly
+    const targetX = newPosition.x - canvasSize.width / 2
+    const targetY = newPosition.y - canvasSize.height / 2
+    
+    setViewport(prev => ({
+      ...prev,
+      x: Math.max(0, Math.min(targetX, WORLD_WIDTH - canvasSize.width)),
+      y: Math.max(0, Math.min(targetY, WORLD_HEIGHT - canvasSize.height))
+    }))
+  }, [playerAvatar, velocity, canvasSize.width, canvasSize.height])
+
+  // Handle keyboard input
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      keysPressed.current.add(e.key)
-    }
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keysPressed.current.delete(e.key)
-    }
+    const handleKeyDown = (e: KeyboardEvent) => keysPressed.current.add(e.key)
+    const handleKeyUp = (e: KeyboardEvent) => keysPressed.current.delete(e.key)
 
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
 
-    let animationFrameId: number
-
-    const animate = (timestamp: number) => {
-      movePlayer(timestamp)
-      animationFrameId = requestAnimationFrame(animate)
-    }
-
-    animationFrameId = requestAnimationFrame(animate)
-
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
-      cancelAnimationFrame(animationFrameId)
     }
-  }, [movePlayer])
-
-  // Handle canvas size updates
-  useEffect(() => {
-    const handleResize = () => {
-      setCanvasSize({ 
-        width: window.innerWidth, 
-        height: window.innerHeight 
-      })
-    }
-    handleResize()
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
-  // Handle rendering
+  // Move drawMinimap before animation loop
+  const drawMinimap = useCallback((ctx: CanvasRenderingContext2D, viewport: Viewport, playerAvatar: Avatar) => {
+    const minimapWidth = 180
+    const minimapHeight = (WORLD_HEIGHT / WORLD_WIDTH) * minimapWidth
+    
+    ctx.clearRect(0, 0, minimapWidth + 20, minimapHeight + 10)
+    
+    const scale = minimapWidth / WORLD_WIDTH
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.fillRect(10, 5, minimapWidth, minimapHeight)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+    ctx.strokeRect(10, 5, minimapWidth, minimapHeight)
+    
+    ROOM_LAYOUTS.forEach((room) => {
+      ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
+      ctx.fillRect(
+        10 + room.x * scale,
+        5 + room.y * scale,
+        room.width * scale,
+        room.height * scale
+      )
+    })
+    
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+    ctx.strokeRect(
+      10 + viewport.x * scale,
+      5 + viewport.y * scale,
+      viewport.width * scale,
+      viewport.height * scale
+    )
+    
+    ctx.fillStyle = '#FF4444'
+    ctx.beginPath()
+    ctx.arc(
+      10 + playerAvatar.x * scale,
+      5 + playerAvatar.y * scale,
+      4,
+      0,
+      2 * Math.PI
+    )
+    ctx.fill()
+  }, [])
+
+  // Animation loop with combined movement and rendering
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
+    const animate = () => {
+      movePlayer()
+      const ctx = canvasRef.current?.getContext('2d')
+      if (!ctx) return
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    let animationFrameId: number
-
-    const render = () => {
       ctx.clearRect(0, 0, canvasSize.width, canvasSize.height)
-      
+
+      ctx.save()
+      ctx.translate(-viewport.x, -viewport.y)
+
       // Draw grid
       const gridOffsetX = viewport.x % TILE_SIZE
       const gridOffsetY = viewport.y % TILE_SIZE
@@ -315,119 +304,100 @@ export default function Home() {
       ctx.strokeStyle = 'rgba(200, 200, 200, 0.2)'
       ctx.beginPath()
 
-      for (let x = -gridOffsetX; x <= canvasSize.width; x += TILE_SIZE) {
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x, canvasSize.height)
+      for (let x = viewport.x - gridOffsetX; x <= viewport.x + canvasSize.width; x += TILE_SIZE) {
+        ctx.moveTo(x, viewport.y)
+        ctx.lineTo(x, viewport.y + canvasSize.height)
       }
 
-      for (let y = -gridOffsetY; y <= canvasSize.height; y += TILE_SIZE) {
-        ctx.moveTo(0, y)
-        ctx.lineTo(canvasSize.width, y)
+      for (let y = viewport.y - gridOffsetY; y <= viewport.y + canvasSize.height; y += TILE_SIZE) {
+        ctx.moveTo(viewport.x, y)
+        ctx.lineTo(viewport.x + canvasSize.width, y)
       }
       ctx.stroke()
 
       // Draw rooms
       ROOM_LAYOUTS.forEach((room) => {
-        const screenX = room.x - viewport.x
-        const screenY = room.y - viewport.y
-
-        if (
-          screenX < canvasSize.width &&
-          screenX + room.width > 0 &&
-          screenY < canvasSize.height &&
-          screenY + room.height > 0
-        ) {
-          ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.2)'
-          ctx.fillRect(screenX, screenY, room.width, room.height)
-          
-          ctx.fillStyle = 'white'
-          ctx.font = '14px Arial'
-          ctx.textAlign = 'center'
-          ctx.fillText(room.name, screenX + room.width/2, screenY + room.height/2)
+        ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
+        ctx.fillRect(room.x, room.y, room.width, room.height)
+        
+        // Always show room names
+        ctx.fillStyle = 'white'
+        ctx.font = '16px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(room.name, room.x + room.width/2, room.y + room.height/2)
+        
+        // Highlight current room
+        if (currentZone && currentZone.id === room.id) {
+          ctx.strokeStyle = 'white'
+          ctx.lineWidth = 2
+          ctx.strokeRect(room.x, room.y, room.width, room.height)
         }
       })
 
       // Draw avatars
-      const drawAvatar = (avatar: Avatar) => {
-        const screenX = avatar.x - viewport.x
-        const screenY = avatar.y - viewport.y
-        
-        if (
-          screenX >= -AVATAR_SIZE && 
-          screenX <= canvasSize.width + AVATAR_SIZE &&
-          screenY >= -AVATAR_SIZE && 
-          screenY <= canvasSize.height + AVATAR_SIZE
-        ) {
-          ctx.beginPath()
-          ctx.arc(screenX, screenY, AVATAR_SIZE / 2, 0, 2 * Math.PI)
-          ctx.fillStyle = avatar.color
-          ctx.fill()
-        }
-      }
-
-      avatars.forEach(drawAvatar)
-      drawAvatar(playerAvatar)
-
-      // Draw minimap
-      const drawMinimap = (ctx: CanvasRenderingContext2D, viewport: Viewport, playerAvatar: Avatar) => {
-        const minimapWidth = 180
-        const minimapHeight = (WORLD_HEIGHT / WORLD_WIDTH) * minimapWidth
-        
-        // Clear previous frame
-        ctx.clearRect(0, 0, minimapWidth + 20, minimapHeight + 10)
-        
-        const scale = minimapWidth / WORLD_WIDTH
-        
-        // Draw minimap background with border
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-        ctx.fillRect(10, 5, minimapWidth, minimapHeight)
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
-        ctx.strokeRect(10, 5, minimapWidth, minimapHeight)
-        
-        // Draw rooms on minimap
-        ROOM_LAYOUTS.forEach((room) => {
-          ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
-          ctx.fillRect(
-            10 + room.x * scale,
-            5 + room.y * scale,
-            room.width * scale,
-            room.height * scale
-          )
-        })
-        
-        // Draw viewport area
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
-        ctx.strokeRect(
-          10 + viewport.x * scale,
-          5 + viewport.y * scale,
-          viewport.width * scale,
-          viewport.height * scale
-        )
-        
-        // Draw player position
-        ctx.fillStyle = '#FF4444'
+      avatars.forEach((avatar) => {
+        ctx.fillStyle = avatar.color
         ctx.beginPath()
-        ctx.arc(
-          10 + playerAvatar.x * scale,
-          5 + playerAvatar.y * scale,
-          4,
-          0,
-          2 * Math.PI
-        )
+        ctx.arc(avatar.x, avatar.y, AVATAR_SIZE/2, 0, Math.PI * 2)
         ctx.fill()
-      }
+      })
+
+      // Draw player
+      ctx.fillStyle = playerAvatar.color
+      ctx.beginPath()
+      ctx.arc(playerAvatar.x, playerAvatar.y, AVATAR_SIZE/2, 0, Math.PI * 2)
+      ctx.fill()
+
+      ctx.restore()
 
       drawMinimap(ctx, viewport, playerAvatar)
 
-      animationFrameId = requestAnimationFrame(render)
+      animationFrameId.current = requestAnimationFrame(animate)
     }
-
-    render()
-
+    
+    animationFrameId.current = requestAnimationFrame(animate)
+    
     return () => {
-      cancelAnimationFrame(animationFrameId)
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current)
+      }
     }
-  }, [viewport, playerAvatar, avatars, canvasSize])
+  }, [movePlayer, viewport, playerAvatar, avatars, currentZone, canvasSize, drawMinimap])
+
+  // Handle canvas resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (canvasRef.current) {
+        const width = window.innerWidth
+        const height = window.innerHeight
+        
+        // Update canvas size
+        canvasRef.current.width = width
+        canvasRef.current.height = height
+        
+        // Update state
+        setCanvasSize({ width, height })
+        setViewport(prev => ({ ...prev, width, height }))
+      }
+    }
+    
+    handleResize() // Initial size
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+
+    const x = e.clientX - rect.left + viewport.x
+    const y = e.clientY - rect.top + viewport.y
+    
+    const newZone = checkZone({ x, y })
+    if (newZone !== currentZone) {
+      setCurrentZone(newZone)
+    }
+  }, [viewport, currentZone])
 
   // Add mock players for testing
   useEffect(() => {
@@ -450,66 +420,29 @@ export default function Home() {
   }, [])
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="relative w-screen h-screen overflow-hidden bg-white">
       <canvas
         ref={canvasRef}
         width={canvasSize.width}
         height={canvasSize.height}
         className="absolute inset-0"
+        style={{ touchAction: 'none' }}
+        onMouseMove={handleMouseMove}
       />
-
-      <AnimatePresence>
-        {currentZone && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            transition={{ duration: 0.3 }}
-          >
-            <ZoneOverlay zone={currentZone} />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
-
-      <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.3 }}
-      >
-        <Button
-          className="absolute bottom-4 right-4"
-          onClick={() => setShowChat(!showChat)}
-        >
-          <MessageCircle className="mr-2 h-4 w-4" />
-          AI Chat
-        </Button>
-      </motion.div>
-
-      <AnimatePresence>
-        {showChat && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-          >
-            <AIChat />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <AnimatePresence>
         {showSpaceBuilder && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-          >
-            <SpaceBuilder onClose={() => setShowSpaceBuilder(false)} />
-          </motion.div>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+            >
+              <SpaceBuilder onClose={() => setShowSpaceBuilder(false)} />
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
+      <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
     </div>
   )
 }
