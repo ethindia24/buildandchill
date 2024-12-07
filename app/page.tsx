@@ -146,7 +146,6 @@ interface Velocity {
 
 export default function Home() {
   const [showSpaceBuilder, setShowSpaceBuilder] = useState(false)
-  const [avatars, setAvatars] = useState<Avatar[]>([])
   const [currentZone, setCurrentZone] = useState<Room | null>(null)
   const [playerAvatar, setPlayerAvatar] = useState<Avatar>({ 
     id: 'player', 
@@ -334,14 +333,6 @@ export default function Home() {
         }
       })
 
-      // Draw avatars
-      avatars.forEach((avatar) => {
-        ctx.fillStyle = avatar.color
-        ctx.beginPath()
-        ctx.arc(avatar.x, avatar.y, AVATAR_SIZE/2, 0, Math.PI * 2)
-        ctx.fill()
-      })
-
       // Draw player
       ctx.fillStyle = playerAvatar.color
       ctx.beginPath()
@@ -362,7 +353,7 @@ export default function Home() {
         cancelAnimationFrame(animationFrameId.current)
       }
     }
-  }, [movePlayer, viewport, playerAvatar, avatars, currentZone, canvasSize, drawMinimap])
+  }, [movePlayer, viewport, playerAvatar, currentZone, canvasSize, drawMinimap])
 
   // Handle canvas resize
   useEffect(() => {
@@ -398,26 +389,6 @@ export default function Home() {
       setCurrentZone(newZone)
     }
   }, [viewport, currentZone])
-
-  // Add mock players for testing
-  useEffect(() => {
-    setAvatars([
-      { 
-        id: 'bot1', 
-        x: 200, 
-        y: 200, 
-        name: 'Bot 1',
-        color: 'blue' 
-      },
-      { 
-        id: 'bot2', 
-        x: 600, 
-        y: 400, 
-        name: 'Bot 2',
-        color: 'green' 
-      }
-    ])
-  }, [])
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-white">
