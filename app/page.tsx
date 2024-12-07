@@ -6,7 +6,6 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import AIChat from "@/components/AIChat"
 import ActionToolbar from "@/components/ActionToolbar"
 import Minimap from "@/components/Minimap"
-import NotificationSystem from "@/components/NotificationSystem"
 import SpaceBuilder from "@/components/SpaceBuilder"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -363,7 +362,6 @@ export default function Home() {
       </AnimatePresence>
 
       <Minimap playerPosition={playerAvatar} canvasSize={canvasSize} />
-      <NotificationSystem />
       <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
 
       <motion.div
@@ -398,7 +396,6 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
-            
           >
             <SpaceBuilder onClose={() => setShowSpaceBuilder(false)} />
           </motion.div>
