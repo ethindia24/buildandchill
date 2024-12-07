@@ -143,7 +143,7 @@ export default function Home() {
   const ROOM_ID = "rov-ksqz-okz"; // Replace this with a valid roomId
   const [envToken, setEnvToken] = useState<string | null>(null);
 
-  const { joinRoom, state } = useRoom();
+  const { joinRoom, state, leaveRoom } = useRoom();
   const { peerIds } = usePeerIds();
   const [users, setUsers] = useState<{ [peerId: string]: { x: number; y: number; color: string } }>({});
 
@@ -435,6 +435,10 @@ export default function Home() {
     if (!currentZone || currentZone.type !== 'event') return
 
     try {
+      if (state === 'connected') {
+        await leaveRoom();
+      }
+
       if (currentZone.huddleRoomId) {
         await joinVideoRoom(currentZone.huddleRoomId)
         setActiveVideoRoom(currentZone.huddleRoomId)
@@ -450,7 +454,7 @@ export default function Home() {
     } catch (error) {
       console.error('Failed to handle video room:', error)
     }
-  }, [currentZone, createVideoRoom, joinVideoRoom])
+  }, [currentZone, createVideoRoom, joinVideoRoom, leaveRoom, state])
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-white">
