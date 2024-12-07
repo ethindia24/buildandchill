@@ -5,7 +5,6 @@ import { MessageCircle } from 'lucide-react'
 import { useState, useEffect, useRef, useCallback } from "react"
 import AIChat from "@/components/AIChat"
 import ActionToolbar from "@/components/ActionToolbar"
-import Minimap from "@/components/Minimap"
 import SpaceBuilder from "@/components/SpaceBuilder"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -33,23 +32,23 @@ interface Room {
 const ROOM_LAYOUTS: Room[] = [
   // Main halls
   { id: 'main-stage', name: 'Main Stage', x: 1400, y: 1000, width: 400, height: 300, type: 'event', theme: { color: '#FF4081' } },
-  { id: 'networking', name: 'Networking Lounge', x: 800, y: 800, width: 300, height: 200, type: 'social', theme: { color: '#2196F3' } },
+  { id: 'networking', name: 'Networking Lounge', x: 1000, y: 1200, width: 300, height: 200, type: 'social', theme: { color: '#2196F3' } },
   
-  // Sponsor rooms - arranged in a circular pattern
+  // Sponsor rooms - arranged in a circular pattern with larger radius
   ...Array.from({ length: 12 }, (_, i) => ({
     id: `sponsor-${i + 1}`,
     name: `Sponsor ${i + 1}`,
-    x: WORLD_WIDTH/2 + Math.cos((i * Math.PI * 2) / 12) * 800,
-    y: WORLD_HEIGHT/2 + Math.sin((i * Math.PI * 2) / 12) * 800,
+    x: WORLD_WIDTH/2 + Math.cos((i * Math.PI * 2) / 12) * 1000, // Increased radius from 800 to 1000
+    y: WORLD_HEIGHT/2 + Math.sin((i * Math.PI * 2) / 12) * 1000,
     width: 200,
     height: 200,
     type: 'sponsor' as const,
     theme: { color: `hsl(${i * 30}, 70%, 60%)` }
   })),
 
-  // Workshop spaces
-  { id: 'workshop-1', name: 'Workshop A', x: 400, y: 400, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#4CAF50' } },
-  { id: 'workshop-2', name: 'Workshop B', x: 2600, y: 400, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#9C27B0' } }
+  // Workshop spaces - moved to better positions
+  { id: 'workshop-1', name: 'Workshop A', x: 600, y: 600, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#4CAF50' } },
+  { id: 'workshop-2', name: 'Workshop B', x: 2200, y: 600, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#9C27B0' } }
 ]
 
 interface Avatar {
@@ -289,9 +288,13 @@ export default function Home() {
       const minimapSize = 150
       const scale = minimapSize / Math.max(WORLD_WIDTH, WORLD_HEIGHT)
       
+      // Draw minimap background with border
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.fillRect(10, 10, minimapSize, minimapSize)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+      ctx.strokeRect(10, 10, minimapSize, minimapSize)
       
+      // Draw rooms on minimap
       ROOM_LAYOUTS.forEach((room) => {
         ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
         ctx.fillRect(
@@ -302,7 +305,8 @@ export default function Home() {
         )
       })
       
-      ctx.strokeStyle = 'white'
+      // Draw viewport area
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
       ctx.strokeRect(
         10 + viewport.x * scale,
         10 + viewport.y * scale,
@@ -310,12 +314,13 @@ export default function Home() {
         canvasSize.height * scale
       )
       
-      ctx.fillStyle = 'red'
+      // Draw player position with a more visible dot
+      ctx.fillStyle = '#FF4444'
       ctx.beginPath()
       ctx.arc(
         10 + playerAvatar.x * scale,
         10 + playerAvatar.y * scale,
-        2,
+        3,  // Slightly larger dot
         0,
         2 * Math.PI
       )
@@ -361,7 +366,6 @@ export default function Home() {
         )}
       </AnimatePresence>
 
-      <Minimap playerPosition={playerAvatar} canvasSize={canvasSize} />
       <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
 
       <motion.div
