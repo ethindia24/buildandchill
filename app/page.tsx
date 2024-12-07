@@ -1,101 +1,277 @@
-import Image from "next/image";
+"use client"
+
+import { Button } from "@/components/ui/button"
+import { MessageCircle } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from "react"
+import AIChat from "@/components/AIChat"
+import ActionToolbar from "@/components/ActionToolbar"
+import Minimap from "@/components/Minimap"
+import NotificationSystem from "@/components/NotificationSystem"
+import ZoneOverlay from "@/components/ZoneOverlay"
+import SpaceBuilder from "@/components/SpaceBuilder"
+import { motion, AnimatePresence } from "framer-motion"
+
+const TILE_SIZE = 32
+const AVATAR_SIZE = 24
+const MOVE_SPEED = 5
+
+interface Avatar {
+  id: string
+  x: number
+  y: number
+  color: string
+}
+
+interface Boundary {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+const boundaries: Boundary[] = [
+  { x: 100, y: 100, width: 200, height: 200 },
+  { x: 400, y: 300, width: 200, height: 200 },
+  { x: 700, y: 100, width: 200, height: 200 },
+]
+
+const checkCollision = (
+  position: { x: number; y: number },
+  avatars: Avatar[],
+  canvasSize: { width: number; height: number }
+) => {
+  // Check boundaries
+  if (
+    position.x < AVATAR_SIZE / 2 ||
+    position.x > canvasSize.width - AVATAR_SIZE / 2 ||
+    position.y < AVATAR_SIZE / 2 ||
+    position.y > canvasSize.height - AVATAR_SIZE / 2
+  ) {
+    return true
+  }
+
+  // Check other avatars
+  for (const avatar of avatars) {
+    const dx = position.x - avatar.x
+    const dy = position.y - avatar.y
+    if (Math.sqrt(dx * dx + dy * dy) < AVATAR_SIZE) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const checkZone = (position: { x: number; y: number }) => {
+  for (let i = 0; i < boundaries.length; i++) {
+    const boundary = boundaries[i]
+    if (
+      position.x >= boundary.x &&
+      position.x <= boundary.x + boundary.width &&
+      position.y >= boundary.y &&
+      position.y <= boundary.y + boundary.height
+    ) {
+      return ['Event Zone', 'Marketplace Zone', 'Governance Zone'][i]
+    }
+  }
+  return null
+}
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [showChat, setShowChat] = useState(false)
+  const [showSpaceBuilder, setShowSpaceBuilder] = useState(false)
+  const [avatars, setAvatars] = useState<Avatar[]>([])
+  const [currentZone, setCurrentZone] = useState<string | null>(null)
+  const [playerAvatar, setPlayerAvatar] = useState<Avatar>({ id: 'player', x: 400, y: 300, color: 'red' })
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  const keysPressed = useRef<Set<string>>(new Set())
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+  useEffect(() => {
+    const handleResize = () => {
+      setCanvasSize({ width: window.innerWidth, height: window.innerHeight })
+    }
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // Add mock players for testing
+  useEffect(() => {
+    setAvatars([
+      { id: 'bot1', x: 200, y: 200, color: 'blue' },
+      { id: 'bot2', x: 600, y: 400, color: 'green' }
+    ])
+  }, [])
+
+  const movePlayer = useCallback(() => {
+    const newPosition = { ...playerAvatar }
+    let moved = false
+
+    if (keysPressed.current.has('ArrowUp')) {
+      newPosition.y -= MOVE_SPEED
+      moved = true
+    }
+    if (keysPressed.current.has('ArrowDown')) {
+      newPosition.y += MOVE_SPEED
+      moved = true
+    }
+    if (keysPressed.current.has('ArrowLeft')) {
+      newPosition.x -= MOVE_SPEED
+      moved = true
+    }
+    if (keysPressed.current.has('ArrowRight')) {
+      newPosition.x += MOVE_SPEED
+      moved = true
+    }
+
+    if (moved && !checkCollision(newPosition, avatars, canvasSize)) {
+      setPlayerAvatar(newPosition)
+      const newZone = checkZone(newPosition)
+      if (newZone !== currentZone) {
+        setCurrentZone(newZone)
+      }
+    }
+  }, [playerAvatar, avatars, canvasSize, currentZone])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      keysPressed.current.add(e.key)
+    }
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysPressed.current.delete(e.key)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+
+    const animationFrame = requestAnimationFrame(function animate() {
+      movePlayer()
+      requestAnimationFrame(animate)
+    })
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      cancelAnimationFrame(animationFrame)
+    }
+  }, [movePlayer])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const drawAvatar = (avatar: Avatar) => {
+      ctx.beginPath()
+      ctx.arc(avatar.x, avatar.y, AVATAR_SIZE / 2, 0, 2 * Math.PI)
+      ctx.fillStyle = avatar.color
+      ctx.fill()
+    }
+
+    const drawZones = () => {
+      boundaries.forEach((boundary, index) => {
+        ctx.fillStyle = `rgba(${index * 100}, ${255 - index * 100}, 0, 0.2)`
+        ctx.fillRect(boundary.x, boundary.y, boundary.width, boundary.height)
+      })
+    }
+
+    const drawGrid = () => {
+      ctx.strokeStyle = 'rgba(200, 200, 200, 0.2)'
+      for (let x = 0; x < canvasSize.width; x += TILE_SIZE) {
+        ctx.beginPath()
+        ctx.moveTo(x, 0)
+        ctx.lineTo(x, canvasSize.height)
+        ctx.stroke()
+      }
+      for (let y = 0; y < canvasSize.height; y += TILE_SIZE) {
+        ctx.beginPath()
+        ctx.moveTo(0, y)
+        ctx.lineTo(canvasSize.width, y)
+        ctx.stroke()
+      }
+    }
+
+    const animate = () => {
+      ctx.clearRect(0, 0, canvasSize.width, canvasSize.height)
+      drawGrid()
+      drawZones()
+      avatars.forEach(drawAvatar)
+      drawAvatar(playerAvatar)
+      requestAnimationFrame(animate)
+    }
+
+    animate()
+  }, [avatars, playerAvatar, canvasSize])
+
+  return (
+    <div className="relative h-screen w-screen overflow-hidden">
+      <canvas
+        ref={canvasRef}
+        width={canvasSize.width}
+        height={canvasSize.height}
+        className="absolute inset-0"
+      />
+
+      <AnimatePresence>
+        {currentZone && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            transition={{ duration: 0.3 }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <ZoneOverlay zone={currentZone} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <Minimap playerPosition={playerAvatar} canvasSize={canvasSize} />
+      <NotificationSystem />
+      <ActionToolbar onOpenSpaceBuilder={() => setShowSpaceBuilder(true)} />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.3 }}
+      >
+        <Button
+          className="absolute bottom-4 right-4"
+          onClick={() => setShowChat(!showChat)}
+        >
+          <MessageCircle className="mr-2 h-4 w-4" />
+          AI Chat
+        </Button>
+      </motion.div>
+
+      <AnimatePresence>
+        {showChat && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
           >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            <AIChat />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSpaceBuilder && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            
+          >
+            <SpaceBuilder onClose={() => setShowSpaceBuilder(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  );
+  )
 }
+
