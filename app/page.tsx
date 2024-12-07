@@ -11,8 +11,23 @@ import { motion, AnimatePresence } from "framer-motion"
 const TILE_SIZE = 32
 const AVATAR_SIZE = 24
 const MOVE_SPEED = 5
-const WORLD_WIDTH = 3200  // 100 tiles wide
-const WORLD_HEIGHT = 2400 // 75 tiles high
+const WORLD_WIDTH = 3200
+const WORLD_HEIGHT = 2000
+
+interface Avatar {
+  id: string
+  x: number
+  y: number
+  name?: string
+  color: string
+}
+
+interface Viewport {
+  x: number
+  y: number
+  width: number
+  height: number
+}
 
 interface Room {
   id: string
@@ -21,43 +36,96 @@ interface Room {
   y: number
   width: number
   height: number
-  type: 'sponsor' | 'event' | 'social' | 'workshop'
+  type: 'event' | 'social' | 'sponsor' | 'workshop'
   theme?: {
     color: string
-    logoUrl?: string
   }
 }
 
 // This will eventually come from our smart contract
 const ROOM_LAYOUTS: Room[] = [
-  // Main halls
-  { id: 'main-stage', name: 'Main Stage', x: 1400, y: 1000, width: 400, height: 300, type: 'event', theme: { color: '#FF4081' } },
-  { id: 'networking', name: 'Networking Lounge', x: 1000, y: 1200, width: 300, height: 200, type: 'social', theme: { color: '#2196F3' } },
-  
-  // Sponsor rooms - arranged in a circular pattern with larger radius
-  ...Array.from({ length: 12 }, (_, i) => ({
-    id: `sponsor-${i + 1}`,
-    name: `Sponsor ${i + 1}`,
-    x: WORLD_WIDTH/2 + Math.cos((i * Math.PI * 2) / 12) * 1000, // Increased radius from 800 to 1000
-    y: WORLD_HEIGHT/2 + Math.sin((i * Math.PI * 2) / 12) * 1000,
-    width: 200,
-    height: 200,
-    type: 'sponsor' as const,
-    theme: { color: `hsl(${i * 30}, 70%, 60%)` }
-  })),
+  // Main Stage - Heart of the space
+  { 
+    id: 'main-stage', 
+    name: 'Main Stage', 
+    x: WORLD_WIDTH/2 - 350, 
+    y: WORLD_HEIGHT/2 - 250, 
+    width: 700,  // Prominent but not overwhelming
+    height: 500, 
+    type: 'event', 
+    theme: { color: '#FF4081' } 
+  },
 
-  // Workshop spaces - moved to better positions
-  { id: 'workshop-1', name: 'Workshop A', x: 600, y: 600, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#4CAF50' } },
-  { id: 'workshop-2', name: 'Workshop B', x: 2200, y: 600, width: 250, height: 200, type: 'workshop' as const, theme: { color: '#9C27B0' } }
+  // Workshops form a balanced pair on the left
+  { 
+    id: 'workshop-1', 
+    name: 'Workshop A', 
+    x: 250, 
+    y: WORLD_HEIGHT/2 - 450, 
+    width: 400, 
+    height: 300, 
+    type: 'workshop', 
+    theme: { color: '#4CAF50' } 
+  },
+  { 
+    id: 'workshop-2', 
+    name: 'Workshop B', 
+    x: 250, 
+    y: WORLD_HEIGHT/2 + 150, 
+    width: 400, 
+    height: 300, 
+    type: 'workshop', 
+    theme: { color: '#9C27B0' } 
+  },
+
+  // Networking spaces in harmony with main stage
+  { 
+    id: 'networking-north', 
+    name: 'Networking North', 
+    x: WORLD_WIDTH/2 - 250, 
+    y: 250, 
+    width: 500, 
+    height: 250, 
+    type: 'social', 
+    theme: { color: '#2196F3' } 
+  },
+  { 
+    id: 'networking-south', 
+    name: 'Networking South', 
+    x: WORLD_WIDTH/2 - 250, 
+    y: WORLD_HEIGHT - 500, 
+    width: 500, 
+    height: 250, 
+    type: 'social', 
+    theme: { color: '#2196F3' } 
+  },
+
+  // Sponsor booths in a gentle curve on the right
+  ...Array.from({ length: 12 }, (_, i) => {
+    // Create 4 rows of 3 booths each, with a slight curve
+    const row = Math.floor(i / 3)
+    const col = i % 3
+    const curve = Math.sin(row * Math.PI / 3) * 100  // Gentle curve
+    
+    const boothWidth = 250
+    const boothHeight = 160
+    const horizontalSpacing = 300
+    const verticalSpacing = 250
+    
+    return {
+      id: `sponsor-${i + 1}`,
+      name: `Sponsor ${i + 1}`,
+      x: WORLD_WIDTH - 900 + col * horizontalSpacing + curve,
+      y: 400 + row * verticalSpacing,
+      width: boothWidth,
+      height: boothHeight,
+      type: 'sponsor' as const,
+      theme: { 
+        color: `hsla(${i * 30}, 70%, 60%, 0.85)`
+      }
+    }
+  })
 ]
-
-interface Avatar {
-  id: string
-  x: number
-  y: number
-  color: string
-  username?: string
-}
 
 // Update boundary checking to use rooms
 const checkCollision = (
@@ -118,8 +186,19 @@ export default function Home() {
   const [showSpaceBuilder, setShowSpaceBuilder] = useState(false)
   const [avatars, setAvatars] = useState<Avatar[]>([])
   const [currentZone, setCurrentZone] = useState<Room | null>(null)
-  const [playerAvatar, setPlayerAvatar] = useState<Avatar>({ id: 'player', x: WORLD_WIDTH/2, y: WORLD_HEIGHT/2, color: 'red' })
-  const [viewport, setViewport] = useState({ x: 0, y: 0 })
+  const [playerAvatar, setPlayerAvatar] = useState<Avatar>({ 
+    id: 'player', 
+    x: WORLD_WIDTH/2, 
+    y: WORLD_HEIGHT/2, 
+    name: 'Player',
+    color: 'red' 
+  })
+  const [viewport, setViewport] = useState<Viewport>({ 
+    x: 0, 
+    y: 0, 
+    width: window.innerWidth, 
+    height: window.innerHeight 
+  })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
   const keysPressed = useRef<Set<string>>(new Set())
@@ -160,7 +239,12 @@ export default function Home() {
       const targetY = newPosition.y - canvasSize.height / 2
       const clampedX = Math.max(0, Math.min(targetX, WORLD_WIDTH - canvasSize.width))
       const clampedY = Math.max(0, Math.min(targetY, WORLD_HEIGHT - canvasSize.height))
-      setViewport({ x: clampedX, y: clampedY })
+      setViewport(prev => ({ 
+        x: clampedX, 
+        y: clampedY,
+        width: prev.width,
+        height: prev.height
+      }))
 
       const newZone = checkZone(newPosition)
       if (newZone !== currentZone) {
@@ -285,46 +369,55 @@ export default function Home() {
       drawAvatar(playerAvatar)
 
       // Draw minimap
-      const minimapSize = 150
-      const scale = minimapSize / Math.max(WORLD_WIDTH, WORLD_HEIGHT)
-      
-      // Draw minimap background with border
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-      ctx.fillRect(10, 10, minimapSize, minimapSize)
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
-      ctx.strokeRect(10, 10, minimapSize, minimapSize)
-      
-      // Draw rooms on minimap
-      ROOM_LAYOUTS.forEach((room) => {
-        ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
-        ctx.fillRect(
-          10 + room.x * scale,
-          10 + room.y * scale,
-          room.width * scale,
-          room.height * scale
+      const drawMinimap = (ctx: CanvasRenderingContext2D, viewport: Viewport, playerAvatar: Avatar) => {
+        const minimapWidth = 180
+        const minimapHeight = (WORLD_HEIGHT / WORLD_WIDTH) * minimapWidth
+        
+        // Clear previous frame
+        ctx.clearRect(0, 0, minimapWidth + 20, minimapHeight + 10)
+        
+        const scale = minimapWidth / WORLD_WIDTH
+        
+        // Draw minimap background with border
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+        ctx.fillRect(10, 5, minimapWidth, minimapHeight)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+        ctx.strokeRect(10, 5, minimapWidth, minimapHeight)
+        
+        // Draw rooms on minimap
+        ROOM_LAYOUTS.forEach((room) => {
+          ctx.fillStyle = room.theme?.color || 'rgba(100, 100, 100, 0.5)'
+          ctx.fillRect(
+            10 + room.x * scale,
+            5 + room.y * scale,
+            room.width * scale,
+            room.height * scale
+          )
+        })
+        
+        // Draw viewport area
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
+        ctx.strokeRect(
+          10 + viewport.x * scale,
+          5 + viewport.y * scale,
+          viewport.width * scale,
+          viewport.height * scale
         )
-      })
-      
-      // Draw viewport area
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)'
-      ctx.strokeRect(
-        10 + viewport.x * scale,
-        10 + viewport.y * scale,
-        canvasSize.width * scale,
-        canvasSize.height * scale
-      )
-      
-      // Draw player position with a more visible dot
-      ctx.fillStyle = '#FF4444'
-      ctx.beginPath()
-      ctx.arc(
-        10 + playerAvatar.x * scale,
-        10 + playerAvatar.y * scale,
-        3,  // Slightly larger dot
-        0,
-        2 * Math.PI
-      )
-      ctx.fill()
+        
+        // Draw player position
+        ctx.fillStyle = '#FF4444'
+        ctx.beginPath()
+        ctx.arc(
+          10 + playerAvatar.x * scale,
+          5 + playerAvatar.y * scale,
+          4,
+          0,
+          2 * Math.PI
+        )
+        ctx.fill()
+      }
+
+      drawMinimap(ctx, viewport, playerAvatar)
 
       animationFrameId = requestAnimationFrame(render)
     }
@@ -339,8 +432,20 @@ export default function Home() {
   // Add mock players for testing
   useEffect(() => {
     setAvatars([
-      { id: 'bot1', x: 200, y: 200, color: 'blue' },
-      { id: 'bot2', x: 600, y: 400, color: 'green' }
+      { 
+        id: 'bot1', 
+        x: 200, 
+        y: 200, 
+        name: 'Bot 1',
+        color: 'blue' 
+      },
+      { 
+        id: 'bot2', 
+        x: 600, 
+        y: 400, 
+        name: 'Bot 2',
+        color: 'green' 
+      }
     ])
   }, [])
 
