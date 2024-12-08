@@ -7,14 +7,22 @@ import {
   useLocalVideo,
   usePeerIds,
   useRoom,
-  useRemoteVideo
+  useRemoteVideo,
+  useRemotePeer
 } from '@huddle01/react/hooks'
 import { IoMicOff, IoMic, IoVideocam, IoVideocamOff, IoClose } from 'react-icons/io5'
+import { useAccount } from 'wagmi'
+import { Identity, Name, Address } from '@coinbase/onchainkit/identity'
 
 interface VideoRoomProps {
   roomId: string
   token: string
   onClose: () => void
+}
+
+interface PeerMetadata {
+  displayName: string
+  walletAddress?: string
 }
 
 export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
@@ -23,11 +31,15 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
   const [isJoining, setIsJoining] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [isCopied, setIsCopied] = useState(false)
+  const { address } = useAccount()
 
   const { joinRoom, state, leaveRoom } = useRoom({
     onJoin: (room) => {
       console.log('Joined room:', room)
-      updateMetadata({ displayName })
+      updateMetadata({ 
+        displayName,
+        walletAddress: address 
+      })
       setIsJoining(false)
       setShowJoinForm(false)
     },
@@ -173,8 +185,20 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
               />
               <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
               <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                <span className="text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
-                  You {displayName ? `(${displayName})` : ''}
+                <span className="text-white text-sm font-medium bg-black/30 px-3 py-1 rounded-full">
+                  {address ? (
+                    <div className='flex flex-col items-start'>
+                      <Identity address={address} className='!bg-transparent'>
+                        
+                        <Name className="text-white" />
+                        
+                        
+                      </Identity>
+                      <div className='pl-6 text-white'>{`(${displayName})`}</div>
+                    </div>
+                  ) : (
+                    `You ${displayName ? `(${displayName})` : ''}`
+                  )}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -207,6 +231,8 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
 function RemotePeer({ peerId }: { peerId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { stream } = useRemoteVideo({ peerId })
+  const { metadata } = useRemotePeer({ peerId })
+  const peerMetadata = metadata as PeerMetadata
 
   useEffect(() => {
     if (stream && videoRef.current) {
@@ -228,9 +254,16 @@ function RemotePeer({ peerId }: { peerId: string }) {
         className="w-full h-full object-cover rounded-2xl bg-black/50"
       />
       <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
-      <span className="absolute bottom-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
-        Peer {peerId.slice(0, 8)}
-      </span>
+      <div className="absolute bottom-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
+        {peerMetadata?.walletAddress ? (
+          <Identity address={peerMetadata.walletAddress as `0x${string}`}>
+            <Name className="text-white" />
+            <Address className="text-gray-400 text-xs" />
+          </Identity>
+        ) : (
+          `Peer ${peerId.slice(0, 8)}`
+        )}
+      </div>
     </div>
   )
 } 
