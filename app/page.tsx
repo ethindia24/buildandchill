@@ -9,6 +9,7 @@ import { useVideoRoom } from "@/hooks/useVideoRoom"
 import { Room, EventRoom, SponsorRoom, WorkshopRoom, SocialRoom } from "@/types/shared"
 import { useRoom, usePeerIds, useDataMessage } from "@huddle01/react/hooks"
 import Chat from '@/components/Chat'
+import { RoomJoinDialog } from "@/components/RoomJoinDialog"
 
 interface Avatar {
   id: string
@@ -473,45 +474,56 @@ export default function Home() {
     }
   }, [viewport, currentZone])
 
+  const [showJoinDialog, setShowJoinDialog] = useState(false)
+
   const handleCanvasClick = useCallback(async () => {
-    if (!currentZone || currentZone.type !== 'event') return
+    if (!currentZone) return
 
     try {
       if (state === 'connected') {
         await leaveRoom();
       }
-
-      // If room exists, join it
       if (currentZone.huddleRoomId) {
         await joinVideoRoom(currentZone.huddleRoomId)
         setActiveVideoRoom(currentZone.huddleRoomId)
       } else {
-        // Prompt user to join existing room or create new one
-        const joinExisting = window.confirm('Join existing room? Click OK to enter room ID or Cancel to create new room')
-        
-        if (joinExisting) {
-          const roomId = window.prompt('Enter room ID:')
-          if (roomId) {
-            await joinVideoRoom(roomId)
-            setActiveVideoRoom(roomId)
-            setCurrentZone(prev => prev ? {
-              ...prev,
-              huddleRoomId: roomId
-            } as EventRoom : null)
-          }
-        } else {
-          const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
-          setActiveVideoRoom(videoRoom.huddleRoomId)
-          setCurrentZone(prev => prev ? {
-            ...prev,
-            huddleRoomId: videoRoom.huddleRoomId
-          } as EventRoom : null)
-        }
+        setShowJoinDialog(true)
       }
     } catch (error) {
       console.error('Failed to handle video room:', error)
     }
-  }, [currentZone, createVideoRoom, joinVideoRoom, leaveRoom, state])
+  }, [currentZone, joinVideoRoom])
+
+  const handleJoinRoom = async (roomId: string) => {
+    try {
+      await joinVideoRoom(roomId)
+      setActiveVideoRoom(roomId)
+      setCurrentZone(prev => prev ? {
+        ...prev,
+        huddleRoomId: roomId
+      } : null)
+      setShowJoinDialog(false)
+    } catch (error) {
+      console.error('Failed to join room:', error)
+    }
+  }
+
+  const handleCreateRoom = async () => {
+    if (!currentZone) return
+    
+    try {
+      const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
+      setActiveVideoRoom(videoRoom.huddleRoomId)
+      setCurrentZone(prev => prev ? {
+        ...prev,
+        huddleRoomId: videoRoom.huddleRoomId
+      } : null)
+      setShowJoinDialog(false)
+    } catch (error) {
+      console.error('Failed to create room:', error)
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (state === 'connected') {
@@ -578,6 +590,13 @@ export default function Home() {
       {state === 'connected' && (
         <Chat mode="global" currentZone={null} />
       )}
+      <RoomJoinDialog 
+        isOpen={showJoinDialog}
+        onClose={() => setShowJoinDialog(false)}
+        onJoinRoom={handleJoinRoom}
+        onCreateRoom={handleCreateRoom}
+        currentZone={currentZone}
+      />
     </div>
   )
 }

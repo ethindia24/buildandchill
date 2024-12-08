@@ -5,10 +5,11 @@ export interface BaseRoom {
   y: number
   width: number
   height: number
-  type: 'event' | 'social' | 'sponsor' | 'workshop' | 'video' | 'chat'
+  type: 'event' | 'workshop' | 'social' | 'sponsor' | 'video' | 'chat'
   theme?: {
     color: string
   }
+  huddleRoomId?: string
 }
 
 export interface ChatRoom extends BaseRoom {
