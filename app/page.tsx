@@ -480,17 +480,32 @@ export default function Home() {
         await leaveRoom();
       }
 
+      // If room exists, join it
       if (currentZone.huddleRoomId) {
         await joinVideoRoom(currentZone.huddleRoomId)
         setActiveVideoRoom(currentZone.huddleRoomId)
       } else {
-        const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
-        setActiveVideoRoom(videoRoom.huddleRoomId)
+        // Prompt user to join existing room or create new one
+        const joinExisting = window.confirm('Join existing room? Click OK to enter room ID or Cancel to create new room')
         
-        setCurrentZone(prev => prev ? {
-          ...prev,
-          huddleRoomId: videoRoom.huddleRoomId
-        } as EventRoom : null)
+        if (joinExisting) {
+          const roomId = window.prompt('Enter room ID:')
+          if (roomId) {
+            await joinVideoRoom(roomId)
+            setActiveVideoRoom(roomId)
+            setCurrentZone(prev => prev ? {
+              ...prev,
+              huddleRoomId: roomId
+            } as EventRoom : null)
+          }
+        } else {
+          const videoRoom = await createVideoRoom(currentZone.x, currentZone.y)
+          setActiveVideoRoom(videoRoom.huddleRoomId)
+          setCurrentZone(prev => prev ? {
+            ...prev,
+            huddleRoomId: videoRoom.huddleRoomId
+          } as EventRoom : null)
+        }
       }
     } catch (error) {
       console.error('Failed to handle video room:', error)

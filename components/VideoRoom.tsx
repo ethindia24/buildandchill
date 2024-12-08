@@ -22,6 +22,7 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
   const [showJoinForm, setShowJoinForm] = useState(true)
   const [isJoining, setIsJoining] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [isCopied, setIsCopied] = useState(false)
 
   const { joinRoom, state, leaveRoom } = useRoom({
     onJoin: (room) => {
@@ -105,6 +106,12 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
     }
   }
 
+  const copyRoomId = async () => {
+    await navigator.clipboard.writeText(roomId)
+    setIsCopied(true)
+    setTimeout(() => setIsCopied(false), 2000)
+  }
+
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-gray-900/95 to-black backdrop-blur-lg">
       <div className="max-w-6xl mx-auto h-full p-6 flex flex-col">
@@ -113,6 +120,12 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
           <div className="flex items-center gap-4">
             <div className={`h-3 w-3 rounded-full ${state === 'connected' ? 'bg-emerald-500' : 'bg-yellow-500'} animate-pulse`} />
             <h2 className="text-xl font-medium text-white">Room: {roomId.slice(0, 8)}</h2>
+            <button
+              onClick={copyRoomId}
+              className="text-sm bg-white/10 hover:bg-white/20 text-white px-3 py-1 rounded-full transition-colors"
+            >
+              {isCopied ? 'Copied!' : 'Copy Room ID'}
+            </button>
           </div>
           <button
             onClick={handleLeaveRoom}
