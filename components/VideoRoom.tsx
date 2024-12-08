@@ -8,9 +8,10 @@ import {
   usePeerIds,
   useRoom,
   useRemoteVideo,
-  useRemotePeer
+  useRemotePeer,
+  useLocalScreenShare
 } from '@huddle01/react/hooks'
-import { IoMicOff, IoMic, IoVideocam, IoVideocamOff, IoClose } from 'react-icons/io5'
+import { IoMicOff, IoMic, IoVideocam, IoVideocamOff, IoClose, IoDesktopOutline, IoStopOutline } from 'react-icons/io5'
 import { useAccount } from 'wagmi'
 import { Identity, Name, Address } from '@coinbase/onchainkit/identity'
 import Chat from './Chat'
@@ -32,6 +33,7 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
   const [showJoinForm, setShowJoinForm] = useState(true)
   const [isJoining, setIsJoining] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const screenRef = useRef<HTMLVideoElement>(null)
   const [isCopied, setIsCopied] = useState(false)
   const { address } = useAccount()
 
@@ -55,6 +57,13 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
   const { enableAudio, isAudioOn, disableAudio } = useLocalAudio()
   const { updateMetadata } = useLocalPeer()
   const { peerIds } = usePeerIds()
+  const {
+    shareStream,
+    startScreenShare,
+    stopScreenShare,
+  } = useLocalScreenShare()
+
+  const isScreenSharing = !!shareStream
 
   // Handle video stream
   useEffect(() => {
@@ -67,6 +76,18 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
       }
     }
   }, [stream])
+
+  // Add useEffect for screen share stream
+  useEffect(() => {
+    if (shareStream && screenRef.current) {
+      screenRef.current.srcObject = shareStream
+    }
+    return () => {
+      if (screenRef.current) {
+        screenRef.current.srcObject = null
+      }
+    }
+  }, [shareStream])
 
   const handleJoinRoom = async () => {
     if (!displayName.trim()) return
@@ -126,6 +147,18 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
     setTimeout(() => setIsCopied(false), 2000)
   }
 
+  const handleScreenShare = async () => {
+    try {
+      if (isScreenSharing) {
+        await stopScreenShare()
+      } else {
+        await startScreenShare()
+      }
+    } catch (error) {
+      console.error('Failed to toggle screen share:', error)
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-gray-900/95 to-black backdrop-blur-lg">
       <div className="max-w-6xl mx-auto h-full p-6 flex flex-col">
@@ -175,53 +208,101 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
 
         {/* Video Grid */}
         {!showJoinForm && state === 'connected' && (
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            {/* Local video */}
-            <div className="relative aspect-video">
-              <video
-                ref={videoRef}
-                autoPlay
-                muted
-                playsInline
-                className="w-full h-full object-cover rounded-2xl bg-black/50"
-              />
-              <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
-              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                <span className="text-white text-sm font-medium bg-black/30 px-3 py-1 rounded-full">
-                  {address ? (
-                    <div className='flex flex-col items-start'>
-                      <Identity address={address} className='!bg-transparent'>
-                        
-                        <Name className="text-white" />
-                        
-                        
-                      </Identity>
-                      <div className='pl-6 text-white'>{`(${displayName})`}</div>
-                    </div>
-                  ) : (
-                    `You ${displayName ? `(${displayName})` : ''}`
-                  )}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    className={`p-2 rounded-full ${isAudioOn ? 'bg-white/10' : 'bg-red-500'}`}
-                    onClick={handleToggleAudio}
-                  >
-                    {isAudioOn ? <IoMic className="text-white" /> : <IoMicOff className="text-white" />}
-                  </button>
-                  <button
-                    className={`p-2 rounded-full ${isVideoOn ? 'bg-white/10' : 'bg-red-500'}`}
-                    onClick={handleToggleVideo}
-                  >
-                    {isVideoOn ? <IoVideocam className="text-white" /> : <IoVideocamOff className="text-white" />}
-                  </button>
+          <div className={`flex-1 grid ${
+            isScreenSharing 
+              ? 'grid-cols-4 auto-rows-min' 
+              : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3'
+          } gap-4 mb-6`}>
+            {/* Local video with screen share when active */}
+            <div className={`relative ${isScreenSharing ? 'col-span-4 flex gap-4' : 'aspect-video'}`}>
+              {/* Local video */}
+              <div className={`relative aspect-video ${isScreenSharing ? 'flex-1' : ''}`}>
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover rounded-2xl bg-black/50"
+                />
+                <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
+                
+                {/* Controls */}
+                <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                  <span className={`text-white text-sm font-medium bg-black/30 px-3 py-1 rounded-full ${
+                    isScreenSharing ? 'hidden md:block' : ''
+                  }`}>
+                    {address ? (
+                      <div className='flex flex-col items-start'>
+                        <Identity address={address} className='!bg-transparent'>
+                          
+                          <Name className="text-white" />
+                          
+                          
+                        </Identity>
+                        <div className='pl-6 text-white'>{`(${displayName})`}</div>
+                      </div>
+                    ) : (
+                      `You ${displayName ? `(${displayName})` : ''}`
+                    )}
+                  </span>
+                  <div className="flex gap-1.5 mx-auto md:mx-0">
+                    <button
+                      className={`p-1.5 md:p-2 rounded-full ${isScreenSharing ? 'bg-red-500' : 'bg-white/10'}`}
+                      onClick={handleScreenShare}
+                    >
+                      {isScreenSharing ? 
+                        <IoStopOutline className="w-4 h-4 md:w-5 md:h-5 text-white" /> : 
+                        <IoDesktopOutline className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                      }
+                    </button>
+                    <button
+                      className={`p-1.5 md:p-2 rounded-full ${isAudioOn ? 'bg-white/10' : 'bg-red-500'}`}
+                      onClick={handleToggleAudio}
+                    >
+                      {isAudioOn ? 
+                        <IoMic className="w-4 h-4 md:w-5 md:h-5 text-white" /> : 
+                        <IoMicOff className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                      }
+                    </button>
+                    <button
+                      className={`p-1.5 md:p-2 rounded-full ${isVideoOn ? 'bg-white/10' : 'bg-red-500'}`}
+                      onClick={handleToggleVideo}
+                    >
+                      {isVideoOn ? 
+                        <IoVideocam className="w-4 h-4 md:w-5 md:h-5 text-white" /> : 
+                        <IoVideocamOff className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                      }
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {/* Screen share */}
+              {isScreenSharing && (
+                <div className="flex-1 relative aspect-video">
+                  <video
+                    ref={screenRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-contain rounded-2xl bg-black/50"
+                  />
+                  <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
+                  <div className="absolute top-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full flex items-center gap-2">
+                    <IoDesktopOutline />
+                    Screen Share
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Remote peers */}
             {peerIds.map((peerId) => (
-              <RemotePeer key={peerId} peerId={peerId} />
+              <RemotePeer 
+                key={peerId} 
+                peerId={peerId}
+                isScreenSharing={isScreenSharing}
+              />
             ))}
           </div>
         )}
@@ -234,7 +315,7 @@ export default function VideoRoom({ roomId, token, onClose, currentZone }: Video
   )
 }
 
-function RemotePeer({ peerId }: { peerId: string }) {
+function RemotePeer({ peerId, isScreenSharing }: { peerId: string, isScreenSharing: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { stream } = useRemoteVideo({ peerId })
   const { metadata } = useRemotePeer({ peerId })
@@ -252,7 +333,9 @@ function RemotePeer({ peerId }: { peerId: string }) {
   }, [stream])
 
   return (
-    <div className="relative aspect-video">
+    <div className={`relative aspect-video ${
+      isScreenSharing ? 'col-span-1 h-[180px]' : ''
+    }`}>
       <video
         ref={videoRef}
         autoPlay
@@ -260,11 +343,13 @@ function RemotePeer({ peerId }: { peerId: string }) {
         className="w-full h-full object-cover rounded-2xl bg-black/50"
       />
       <div className="absolute inset-0 rounded-2xl ring-1 ring-white/20" />
-      <div className="absolute bottom-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
+      <div className={`absolute bottom-4 left-4 text-white text-sm font-medium bg-black/50 px-3 py-1 rounded-full ${
+        isScreenSharing ? '' : ''
+      }`}>
         {peerMetadata?.walletAddress ? (
           <Identity address={peerMetadata.walletAddress as `0x${string}`}>
             <Name className="text-white" />
-            <Address className="text-gray-400 text-xs" />
+            {!isScreenSharing && <Address className="text-gray-400 text-xs" />}
           </Identity>
         ) : (
           `Peer ${peerId.slice(0, 8)}`
