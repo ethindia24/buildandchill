@@ -13,11 +13,13 @@ import {
 import { IoMicOff, IoMic, IoVideocam, IoVideocamOff, IoClose } from 'react-icons/io5'
 import { useAccount } from 'wagmi'
 import { Identity, Name, Address } from '@coinbase/onchainkit/identity'
+import Chat from './Chat'
 
 interface VideoRoomProps {
   roomId: string
   token: string
   onClose: () => void
+  currentZone?: { id: string } | null
 }
 
 interface PeerMetadata {
@@ -25,7 +27,7 @@ interface PeerMetadata {
   walletAddress?: string
 }
 
-export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
+export default function VideoRoom({ roomId, token, onClose, currentZone }: VideoRoomProps) {
   const [displayName, setDisplayName] = useState('')
   const [showJoinForm, setShowJoinForm] = useState(true)
   const [isJoining, setIsJoining] = useState(false)
@@ -222,6 +224,10 @@ export default function VideoRoom({ roomId, token, onClose }: VideoRoomProps) {
               <RemotePeer key={peerId} peerId={peerId} />
             ))}
           </div>
+        )}
+
+        {!showJoinForm && state === 'connected' && (
+          <Chat currentZone={currentZone?.id ?? null} mode="zone" />
         )}
       </div>
     </div>

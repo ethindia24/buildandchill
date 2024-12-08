@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { useVideoRoom } from "@/hooks/useVideoRoom"
 import { Room, EventRoom, SponsorRoom, WorkshopRoom, SocialRoom } from "@/types/shared"
 import { useRoom, usePeerIds, useDataMessage } from "@huddle01/react/hooks"
+import Chat from '@/components/Chat'
 
 interface Avatar {
   id: string
@@ -554,6 +555,7 @@ export default function Home() {
                 roomId={activeVideoRoom} 
                 token={token} 
                 onClose={() => setActiveVideoRoom(null)}
+                currentZone={currentZone}
               />
             </motion.div>
           </div>
@@ -571,6 +573,10 @@ export default function Home() {
             Loading video room...
           </div>
         </div>
+      )}
+      
+      {state === 'connected' && (
+        <Chat mode="global" currentZone={null} />
       )}
     </div>
   )
